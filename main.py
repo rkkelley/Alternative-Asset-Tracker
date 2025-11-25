@@ -1,6 +1,7 @@
 import secrets
 from contextlib import asynccontextmanager
-from typing import Annotated
+from datetime import date, datetime
+from typing import Annotated, Optional
 
 from fastapi import (Depends, FastAPI, Form, HTTPException, Request, Response,
                      status)
@@ -14,18 +15,15 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 # --- Configuration ---
 
-# Database Setup (SQLite for development)
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 connect_args = {"check_same_thread": False}
 engine = create_engine(sqlite_url, connect_args=connect_args)
 
-# Security Setup
-# In production, this should be an environment variable!
-SECRET_KEY = secrets.token_hex(32)
+# In production, this MUST be an environment variable
+SECRET_KEY = "REPLACE_THIS_WITH_A_REAL_SECRET_KEY_IN_PROD"
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
-# Templates Setup
 templates = Jinja2Templates(directory="templates")
 
 # --- Lifecycle & Database Helpers ---
@@ -49,137 +47,113 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
-
-# Mount static files (CSS, etc.)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# --- Authentication Logic (Adapted from your class notes) ---
+# --- Authentication Helpers ---
 
 
 def create_session_token(user_id: int) -> str:
-    """Create a secure session token for a user ID"""
-    # We sign the User ID (int) converted to string
     return serializer.dumps(str(user_id))
 
 
 def verify_session_token(token: str) -> int | None:
-    """Verify a session token and return the user_id"""
     try:
-        # Token expires after 1 hour (3600 seconds)
-        user_id_str = serializer.loads(token, max_age=3600)
+        user_id_str = serializer.loads(token, max_age=3600)  # 1 hour expiry
         return int(user_id_str)
     except:
         return None
 
 
 def get_current_user(request: Request, session: Session) -> User | None:
-    """
-    Get the currently logged-in user from the session cookie.
-    This function now queries the SQL database instead of a dictionary.
-    """
     session_token = request.cookies.get("session")
     if not session_token:
         return None
-
     user_id = verify_session_token(session_token)
     if not user_id:
         return None
+    return session.get(User, user_id)
 
-    # Fetch the real user from the database
-    user = session.get(User, user_id)
-    return user
-
-# --- Routes ---
+# --- Routes: Public & Auth ---
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, session: Session = Depends(get_session)):
-    """Home page - redirects based on login status"""
     user = get_current_user(request, session)
-
     if user:
         return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
-    else:
-        # Show a landing page with "Login" or "Try Demo" buttons
-        return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, session: Session = Depends(get_session)):
-    """Show the login page"""
-    user = get_current_user(request, session)
-    if user:
+    if get_current_user(request, session):
         return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
-
     return templates.TemplateResponse("login.html", {"request": request})
 
 
 @app.post("/login", response_class=HTMLResponse)
 async def login(
     request: Request,
-    response: Response,
     session: Session = Depends(get_session),
     email: str = Form(...),
     password: str = Form(...)
 ):
-    """Handle login form submission"""
-
-    # Query the database for the user
     statement = select(User).where(User.email == email)
-    results = session.exec(statement)
-    user = results.first()
+    user = session.exec(statement).first()
 
-    # Verify password (simplistic for MVP - use hashing in production!)
+    # Simple password check (Upgrade to hashing for prod!)
     if not user or user.hashed_password != password:
-        return """
-        <div class="error-message" style="color: red;">
-            ❌ Invalid email or password
-        </div>
-        """
+        return """<div class="error-message text-red-500 mt-2">❌ Invalid email or password</div>"""
+
+    # TYPE FIX: Ensure user.id is not None before using it
+    if user.id is None:
+        return """<div class="error-message text-red-500 mt-2">❌ System Error: User has no ID</div>"""
 
     # Login successful - create session token
     session_token = create_session_token(user.id)
 
-    # Return success message with redirect instruction
-    html_response = HTMLResponse("""
-        <div class="success-message" style="color: green;">
-            ✅ Login successful! Redirecting...
-        </div>
-        <script>
-            setTimeout(() => window.location.href = '/dashboard', 1000);
-        </script>
+    response = HTMLResponse("""
+        <div class="success-message text-green-500 mt-2">✅ Login successful! Redirecting...</div>
+        <script>window.location.href = '/dashboard';</script>
     """)
+    response.set_cookie(key="session", value=session_token,
+                        httponly=True, samesite="lax")
+    return response
 
-    # Set the session cookie on the response object
-    html_response.set_cookie(
-        key="session",
-        value=session_token,
-        httponly=True,
-        secure=False,  # Set to True in production
-        samesite="lax"
-    )
 
-    return html_response
+@app.post("/register", response_class=HTMLResponse)
+async def register(
+    email: str = Form(...),
+    password: str = Form(...),
+    session: Session = Depends(get_session)
+):
+    statement = select(User).where(User.email == email)
+    if session.exec(statement).first():
+        return "<div class='text-red-500'>Email already registered</div>"
+
+    new_user = User(email=email, hashed_password=password)
+    session.add(new_user)
+    session.commit()
+    return """<div class='text-green-500'>Account created! <a href='/login' class='underline'>Log in here</a></div>"""
 
 
 @app.post("/logout", response_class=HTMLResponse)
 async def logout():
-    """Handle logout"""
     response = RedirectResponse(
         url="/login", status_code=status.HTTP_302_FOUND)
     response.delete_cookie("session")
     return response
 
+# --- Routes: Dashboard & Portfolio Logic ---
+
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, session: Session = Depends(get_session)):
-    """Protected dashboard - requires login"""
     user = get_current_user(request, session)
-
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
 
-    # Calculate Portfolio Metrics (The Finance Logic)
+    # Initial load renders the full page
     total_cost = sum(asset.purchase_price for asset in user.assets)
     total_value = sum(asset.current_market_value for asset in user.assets)
     unrealized_gain = total_value - total_cost
@@ -192,31 +166,183 @@ async def dashboard(request: Request, session: Session = Depends(get_session)):
         "unrealized_gain": unrealized_gain
     })
 
-# --- Registration Endpoint (To create users) ---
+# --- HTMX Fragments: Asset CRUD ---
 
 
-@app.post("/register", response_class=HTMLResponse)
-async def register(
-    email: str = Form(...),
-    password: str = Form(...),
+@app.get("/fragments/assets/new", response_class=HTMLResponse)
+async def get_add_asset_form(request: Request, session: Session = Depends(get_session)):
+    user = get_current_user(request, session)
+    if not user:
+        return Response(status_code=401)
+
+    return templates.TemplateResponse("fragments/add_asset_modal.html", {
+        "request": request,
+        "categories": user.categories
+    })
+
+
+@app.post("/fragments/assets", response_class=HTMLResponse)
+async def create_asset(
+    request: Request,
+    session: Session = Depends(get_session),
+    name: str = Form(...),
+    purchase_price: float = Form(...),
+    purchase_date: str = Form(...),  # Date string from form
+    category_id: Optional[int] = Form(None)
+):
+    user = get_current_user(request, session)
+    if not user:
+        return Response(status_code=401)
+
+    # TYPE FIX: Ensure user.id is present
+    if user.id is None:
+        return Response(status_code=500)
+
+    try:
+        p_date = datetime.strptime(purchase_date, "%Y-%m-%d").date()
+    except ValueError:
+        p_date = date.today()  # Fallback
+
+    new_asset = Asset(
+        name=name,
+        purchase_price=purchase_price,
+        current_market_value=purchase_price,  # Default to purchase price
+        purchase_date=p_date,
+        category_id=category_id if category_id != 0 else None,  # Handle "No Category"
+        owner_id=user.id
+    )
+    session.add(new_asset)
+    session.commit()
+    session.refresh(new_asset)
+
+    # Return the UPDATED dashboard list + totals (OOB Swap)
+    session.refresh(user)  # Refresh user to get new asset in relationship
+    total_cost = sum(a.purchase_price for a in user.assets)
+    total_value = sum(a.current_market_value for a in user.assets)
+    unrealized_gain = total_value - total_cost
+
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {
+        "request": request,
+        "user": user,
+        "total_cost": total_cost,
+        "total_value": total_value,
+        "unrealized_gain": unrealized_gain
+    })
+
+
+@app.get("/fragments/assets/{asset_id}/edit", response_class=HTMLResponse)
+async def get_edit_asset_row(
+    asset_id: int,
+    request: Request,
     session: Session = Depends(get_session)
 ):
-    # Check if user already exists
-    statement = select(User).where(User.email == email)
-    existing_user = session.exec(statement).first()
+    user = get_current_user(request, session)
+    asset = session.get(Asset, asset_id)
 
-    if existing_user:
-        return "<div class='error'>Email already registered</div>"
+    # TYPE FIX: Check user.id
+    if not user or not asset or user.id is None or asset.owner_id != user.id:
+        return Response(status_code=403)
 
-    # Create new user
-    # Note: For MVP we are storing plain password. UPGRADE THIS LATER.
-    new_user = User(email=email, hashed_password=password)
-    session.add(new_user)
+    return templates.TemplateResponse("fragments/edit_asset_row.html", {
+        "request": request,
+        "asset": asset,
+        "categories": user.categories
+    })
+
+
+@app.put("/fragments/assets/{asset_id}", response_class=HTMLResponse)
+async def update_asset(
+    asset_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    name: str = Form(...),
+    current_market_value: float = Form(...),
+    category_id: Optional[int] = Form(None)
+):
+    user = get_current_user(request, session)
+    asset = session.get(Asset, asset_id)
+
+    # TYPE FIX: Check user.id
+    if not user or not asset or user.id is None or asset.owner_id != user.id:
+        return Response(status_code=403)
+
+    asset.name = name
+    asset.current_market_value = current_market_value
+    asset.category_id = category_id if category_id != 0 else None
+    asset.last_updated = datetime.utcnow()
+
+    session.add(asset)
     session.commit()
-    session.refresh(new_user)
+    session.refresh(user)  # Refresh for totals
 
-    return """
-    <div class='success'>
-        Account created! <a href='/login'>Log in here</a>
-    </div>
-    """
+    # Recalculate totals for OOB swap
+    total_cost = sum(a.purchase_price for a in user.assets)
+    total_value = sum(a.current_market_value for a in user.assets)
+    unrealized_gain = total_value - total_cost
+
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {
+        "request": request,
+        "user": user,
+        "total_cost": total_cost,
+        "total_value": total_value,
+        "unrealized_gain": unrealized_gain
+    })
+
+
+@app.delete("/fragments/assets/{asset_id}", response_class=HTMLResponse)
+async def delete_asset(
+    asset_id: int,
+    request: Request,
+    session: Session = Depends(get_session)
+):
+    user = get_current_user(request, session)
+    asset = session.get(Asset, asset_id)
+
+    # TYPE FIX: Check user.id
+    if not user or not asset or user.id is None or asset.owner_id != user.id:
+        return Response(status_code=403)
+
+    session.delete(asset)
+    session.commit()
+    session.refresh(user)
+
+    # Recalculate totals
+    total_cost = sum(a.purchase_price for a in user.assets)
+    total_value = sum(a.current_market_value for a in user.assets)
+    unrealized_gain = total_value - total_cost
+
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {
+        "request": request,
+        "user": user,
+        "total_cost": total_cost,
+        "total_value": total_value,
+        "unrealized_gain": unrealized_gain
+    })
+
+# --- HTMX Fragments: Category CRUD ---
+
+
+@app.post("/fragments/categories", response_class=HTMLResponse)
+async def create_category(
+    request: Request,
+    session: Session = Depends(get_session),
+    name: str = Form(...)
+):
+    user = get_current_user(request, session)
+    if not user:
+        return Response(status_code=401)
+
+    # TYPE FIX: Ensure user.id is present
+    if user.id is None:
+        return Response(status_code=500)
+
+    new_cat = Category(name=name, owner_id=user.id)
+    session.add(new_cat)
+    session.commit()
+    session.refresh(user)
+
+    # Return updated dropdown options
+    return templates.TemplateResponse("fragments/category_options.html", {
+        "request": request,
+        "categories": user.categories
+    })

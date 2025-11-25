@@ -1,0 +1,78 @@
+<!-- This fragment replaces the ENTIRE dashboard content (Totals + Table) -->
+<div id="dashboard-container" class="max-w-4xl mx-auto">
+
+    <!-- Summary Cards (Updated Totals) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div class="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
+            <h3 class="text-gray-500 text-sm font-uppercase">Total Market Value</h3>
+            <p class="text-2xl font-bold text-gray-800">${{ "%.2f"|format(total_value) }}</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow border-l-4 border-gray-500">
+            <h3 class="text-gray-500 text-sm font-uppercase">Total Cost Basis</h3>
+            <p class="text-2xl font-bold text-gray-800">${{ "%.2f"|format(total_cost) }}</p>
+        </div>
+        <div
+            class="bg-white p-6 rounded-lg shadow border-l-4 {% if unrealized_gain >= 0 %}border-green-500{% else %}border-red-500{% endif %}">
+            <h3 class="text-gray-500 text-sm font-uppercase">Unrealized Gain</h3>
+            <p class="text-2xl font-bold {% if unrealized_gain >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if unrealized_gain > 0 %}+{% endif %}${{ "%.2f"|format(unrealized_gain) }}
+            </p>
+        </div>
+    </div>
+
+    <!-- Actions Bar -->
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold text-gray-700">Asset List</h2>
+        <button hx-get="/fragments/assets/new" hx-target="#modal-container"
+            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 shadow">
+            + Add Asset
+        </button>
+    </div>
+
+    <!-- Asset Table -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <table class="min-w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current
+                        Value</th>
+                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions
+                    </th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {% for asset in user.assets %}
+                <tr id="asset-row-{{ asset.id }}">
+                    <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{{ asset.name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">
+                        {% if asset.category %}{{ asset.category.name }}{% else %}-{% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">${{ "%.2f"|format(asset.purchase_price) }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-gray-900 font-bold">${{
+                        "%.2f"|format(asset.current_market_value) }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button hx-get="/fragments/assets/{{ asset.id }}/edit" hx-target="#asset-row-{{ asset.id }}"
+                            hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
+                        <button hx-delete="/fragments/assets/{{ asset.id }}" hx-target="#dashboard-container"
+                            hx-swap="innerHTML" hx-confirm="Are you sure?"
+                            class="text-red-600 hover:text-red-900">Delete</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="px-6 py-8 text-center text-gray-500 italic">
+                        No assets found. Start by adding one!
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- Modal Container -->
+    <div id="modal-container"></div>
+</div>

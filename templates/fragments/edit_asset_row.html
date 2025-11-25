@@ -1,0 +1,26 @@
+<tr id="asset-row-{{ asset.id }}" class="bg-yellow-50">
+    <td colspan="5">
+        <form hx-put="/fragments/assets/{{ asset.id }}" hx-target="#dashboard-container" hx-swap="innerHTML"
+            class="flex items-center justify-between w-full">
+            <input type="text" name="name" value="{{ asset.name }}" class="border rounded px-2 py-1 w-1/4" required>
+
+            <select name="category_id" class="border rounded px-2 py-1 w-1/4">
+                <option value="0">No Category</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" {% if asset.category_id==cat.id %}selected{% endif %}>{{ cat.name }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <span class="text-gray-500 w-1/6">${{ "%.2f"|format(asset.purchase_price) }}</span>
+
+            <input type="number" step="0.01" name="current_market_value" value="{{ asset.current_market_value }}"
+                class="border rounded px-2 py-1 w-1/6 font-bold" required>
+
+            <div class="flex space-x-2">
+                <button type="submit" class="text-green-600 hover:text-green-900">Save</button>
+                <button hx-get="/dashboard" hx-target="body" class="text-gray-500 hover:text-gray-700">Cancel</button>
+            </div>
+        </form>
+    </td>
+</tr>
