@@ -1,6 +1,7 @@
+import random
 import secrets
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Optional
 
 from fastapi import (Depends, FastAPI, Form, HTTPException, Request, Response,
@@ -9,24 +10,20 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer
-# Import our models
-from models import Asset, Category, User
+from models import Asset, Category, User, ValuationHistory
 from sqlmodel import Session, SQLModel, create_engine, select
 
 # --- Configuration ---
-
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 connect_args = {"check_same_thread": False}
 engine = create_engine(sqlite_url, connect_args=connect_args)
 
-# In production, this MUST be an environment variable
 SECRET_KEY = "REPLACE_THIS_WITH_A_REAL_SECRET_KEY_IN_PROD"
 serializer = URLSafeTimedSerializer(SECRET_KEY)
-
 templates = Jinja2Templates(directory="templates")
 
-# --- Lifecycle & Database Helpers ---
+# --- Lifecycle ---
 
 
 def create_db_and_tables():
@@ -38,9 +35,6 @@ def get_session():
         yield session
 
 
-SessionDep = Annotated[Session, Depends(get_session)]
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
@@ -49,7 +43,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# --- Authentication Helpers ---
+# --- Auth Helpers ---
 
 
 def create_session_token(user_id: int) -> str:
@@ -58,7 +52,7 @@ def create_session_token(user_id: int) -> str:
 
 def verify_session_token(token: str) -> int | None:
     try:
-        user_id_str = serializer.loads(token, max_age=3600)  # 1 hour expiry
+        user_id_str = serializer.loads(token, max_age=3600)
         return int(user_id_str)
     except:
         return None
@@ -73,7 +67,7 @@ def get_current_user(request: Request, session: Session) -> User | None:
         return None
     return session.get(User, user_id)
 
-# --- Routes: Public & Auth ---
+# --- Routes ---
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -92,48 +86,37 @@ async def login_page(request: Request, session: Session = Depends(get_session)):
 
 
 @app.post("/login", response_class=HTMLResponse)
-async def login(
-    request: Request,
-    session: Session = Depends(get_session),
-    email: str = Form(...),
-    password: str = Form(...)
-):
+async def login(request: Request, session: Session = Depends(get_session), email: str = Form(...), password: str = Form(...)):
     statement = select(User).where(User.email == email)
     user = session.exec(statement).first()
-
-    # Simple password check (Upgrade to hashing for prod!)
     if not user or user.hashed_password != password:
         return """<div class="error-message text-red-500 mt-2">❌ Invalid email or password</div>"""
-
-    # TYPE FIX: Ensure user.id is not None before using it
     if user.id is None:
-        return """<div class="error-message text-red-500 mt-2">❌ System Error: User has no ID</div>"""
+        return """<div class="text-red-500">System Error</div>"""
 
-    # Login successful - create session token
     session_token = create_session_token(user.id)
-
-    response = HTMLResponse("""
-        <div class="success-message text-green-500 mt-2">✅ Login successful! Redirecting...</div>
-        <script>window.location.href = '/dashboard';</script>
-    """)
+    response = HTMLResponse(
+        """<div class="text-green-500 mt-2">✅ Login successful! Redirecting...</div><script>window.location.href = '/dashboard';</script>""")
     response.set_cookie(key="session", value=session_token,
                         httponly=True, samesite="lax")
     return response
 
 
 @app.post("/register", response_class=HTMLResponse)
-async def register(
-    email: str = Form(...),
-    password: str = Form(...),
-    session: Session = Depends(get_session)
-):
-    statement = select(User).where(User.email == email)
-    if session.exec(statement).first():
+async def register(email: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
+    if session.exec(select(User).where(User.email == email)).first():
         return "<div class='text-red-500'>Email already registered</div>"
 
     new_user = User(email=email, hashed_password=password)
     session.add(new_user)
     session.commit()
+    session.refresh(new_user)
+
+    if new_user.id:
+        for cat in ["Sneakers", "Watches", "Trading Cards", "Crypto", "Art"]:
+            session.add(Category(name=cat, owner_id=new_user.id))
+        session.commit()
+
     return """<div class='text-green-500'>Account created! <a href='/login' class='underline'>Log in here</a></div>"""
 
 
@@ -144,7 +127,103 @@ async def logout():
     response.delete_cookie("session")
     return response
 
-# --- Routes: Dashboard & Portfolio Logic ---
+# --- Demo Logic (S-Tier Seeding) ---
+
+
+@app.post("/demo", response_class=HTMLResponse)
+async def try_demo(session: Session = Depends(get_session)):
+    demo_email = "demo@alt-track.com"
+    demo_user = session.exec(select(User).where(
+        User.email == demo_email)).first()
+
+    if not demo_user:
+        demo_user = User(email=demo_email, hashed_password="demo_password_123")
+        session.add(demo_user)
+        session.commit()
+        session.refresh(demo_user)
+
+    if demo_user.id is None:
+        return Response(status_code=500)
+
+    # WIPE
+    existing_assets = session.exec(select(Asset).where(
+        Asset.owner_id == demo_user.id)).all()
+    for asset in existing_assets:
+        history = session.exec(select(ValuationHistory).where(
+            ValuationHistory.asset_id == asset.id)).all()
+        for h in history:
+            session.delete(h)
+        session.delete(asset)
+
+    existing_cats = session.exec(select(Category).where(
+        Category.owner_id == demo_user.id)).all()
+    for c in existing_cats:
+        session.delete(c)
+    session.commit()
+
+    # RE-SEED Categories
+    cat_map = {}
+    for name in ["Sneakers", "Watches", "Private Equity", "Real Estate", "Crypto", "Art"]:
+        c = Category(name=name, owner_id=demo_user.id)
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+        cat_map[name] = c.id
+
+    today = datetime.utcnow()
+
+    # 1. The Winner (High Gain, Recent Update)
+    a1 = Asset(name="Rolex Submariner", category_id=cat_map["Watches"], purchase_price=8500, current_market_value=14500, purchase_date=date(
+        2019, 5, 10), last_updated=today, owner_id=demo_user.id)
+    session.add(a1)
+
+    # 2. The Loser (Unrealized Loss, Recent Update)
+    # FIX: Add history so the loss is explained
+    a2 = Asset(name="Bored Ape NFT #8817", category_id=cat_map["Crypto"], purchase_price=120000, current_market_value=45000, purchase_date=date(
+        2021, 11, 1), last_updated=today - timedelta(days=2), owner_id=demo_user.id)
+    session.add(a2)
+    session.commit()
+    session.refresh(a2)
+
+    if a2.id:
+        # Log the crash
+        h_crypto = ValuationHistory(asset_id=a2.id, old_value=120000, new_value=45000,
+                                    change_date=today-timedelta(days=2), note="Market Correction")
+        session.add(h_crypto)
+
+    # 3. The Risk Flag (Stale Price > 90 days)
+    stale_date = today - timedelta(days=145)
+    a3 = Asset(name="Series B Startup Shares", category_id=cat_map["Private Equity"], purchase_price=50000, current_market_value=50000, purchase_date=date(
+        2022, 1, 15), last_updated=stale_date, owner_id=demo_user.id)
+    session.add(a3)
+
+    # 4. The Audit Star (Multiple History Entries)
+    a4 = Asset(name="Rental Property Fund", category_id=cat_map["Real Estate"], purchase_price=10000, current_market_value=13500, purchase_date=date(
+        2023, 6, 1), last_updated=today, owner_id=demo_user.id)
+    session.add(a4)
+    session.commit()
+    session.refresh(a4)
+
+    if a4.id:
+        # History 1: Original Valuation
+        session.add(ValuationHistory(asset_id=a4.id, old_value=10000, new_value=11000,
+                    change_date=today-timedelta(days=180), note="Q2 Valuation Update"))
+        # History 2: Bump
+        session.add(ValuationHistory(asset_id=a4.id, old_value=11000, new_value=12500,
+                    change_date=today-timedelta(days=90), note="Q3 Market Adjustment"))
+        # History 3: Current
+        session.add(ValuationHistory(asset_id=a4.id, old_value=12500,
+                    new_value=13500, change_date=today, note="Year-End Audit"))
+        session.commit()
+
+    session_token = create_session_token(demo_user.id)
+    response = RedirectResponse(
+        url="/dashboard", status_code=status.HTTP_302_FOUND)
+    response.set_cookie(key="session", value=session_token,
+                        httponly=True, samesite="lax")
+    return response
+
+# --- Dashboard & CRUD ---
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -153,17 +232,33 @@ async def dashboard(request: Request, session: Session = Depends(get_session)):
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
 
-    # Initial load renders the full page
     total_cost = sum(asset.purchase_price for asset in user.assets)
     total_value = sum(asset.current_market_value for asset in user.assets)
     unrealized_gain = total_value - total_cost
 
+    # Pass 'now' for Stale calculations
     return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "user": user,
-        "total_cost": total_cost,
-        "total_value": total_value,
-        "unrealized_gain": unrealized_gain
+        "request": request, "user": user, "total_cost": total_cost,
+        "total_value": total_value, "unrealized_gain": unrealized_gain,
+        "now": datetime.utcnow()
+    })
+
+# --- Audit History Endpoint ---
+
+
+@app.get("/fragments/assets/{asset_id}/history", response_class=HTMLResponse)
+async def get_asset_history(asset_id: int, request: Request, session: Session = Depends(get_session)):
+    user = get_current_user(request, session)
+    asset = session.get(Asset, asset_id)
+    if not user or not asset or asset.owner_id != user.id:
+        return Response(status_code=403)
+
+    # Sort history by date descending
+    history = sorted(asset.valuation_history,
+                     key=lambda x: x.change_date, reverse=True)
+
+    return templates.TemplateResponse("fragments/asset_history_modal.html", {
+        "request": request, "asset": asset, "history": history
     })
 
 # --- HTMX Fragments: Asset CRUD ---
@@ -187,16 +282,12 @@ async def create_asset(
     session: Session = Depends(get_session),
     name: str = Form(...),
     purchase_price: float = Form(...),
-    purchase_date: str = Form(...),  # Date string from form
+    purchase_date: str = Form(...),
     category_id: Optional[int] = Form(None)
 ):
     user = get_current_user(request, session)
-    if not user:
+    if not user or user.id is None:
         return Response(status_code=401)
-
-    # TYPE FIX: Ensure user.id is present
-    if user.id is None:
-        return Response(status_code=500)
 
     try:
         p_date = datetime.strptime(purchase_date, "%Y-%m-%d").date()
@@ -215,8 +306,8 @@ async def create_asset(
     session.commit()
     session.refresh(new_asset)
 
-    # Return the UPDATED dashboard list + totals (OOB Swap)
-    session.refresh(user)  # Refresh user to get new asset in relationship
+    # OOB Swap: Return updated dashboard
+    session.refresh(user)
     total_cost = sum(a.purchase_price for a in user.assets)
     total_value = sum(a.current_market_value for a in user.assets)
     unrealized_gain = total_value - total_cost
@@ -226,7 +317,8 @@ async def create_asset(
         "user": user,
         "total_cost": total_cost,
         "total_value": total_value,
-        "unrealized_gain": unrealized_gain
+        "unrealized_gain": unrealized_gain,
+        "now": datetime.utcnow()
     })
 
 
@@ -239,7 +331,6 @@ async def get_edit_asset_row(
     user = get_current_user(request, session)
     asset = session.get(Asset, asset_id)
 
-    # TYPE FIX: Check user.id
     if not user or not asset or user.id is None or asset.owner_id != user.id:
         return Response(status_code=403)
 
@@ -257,35 +348,46 @@ async def update_asset(
     session: Session = Depends(get_session),
     name: str = Form(...),
     current_market_value: float = Form(...),
-    category_id: Optional[int] = Form(None)
+    category_id: Optional[int] = Form(None),
+    audit_note: Optional[str] = Form(None)  # NEW: Capture the note
 ):
     user = get_current_user(request, session)
     asset = session.get(Asset, asset_id)
-
-    # TYPE FIX: Check user.id
     if not user or not asset or user.id is None or asset.owner_id != user.id:
         return Response(status_code=403)
+
+    # AUDIT LOGIC: Only if value changed
+    if asset.current_market_value != current_market_value:
+        history = ValuationHistory(
+            asset_id=asset.id,  # type: ignore
+            old_value=asset.current_market_value,
+            new_value=current_market_value,
+            note=audit_note or "Manual Update",
+            change_date=datetime.utcnow()
+        )
+        session.add(history)
 
     asset.name = name
     asset.current_market_value = current_market_value
     asset.category_id = category_id if category_id != 0 else None
-    asset.last_updated = datetime.utcnow()
+    asset.last_updated = datetime.utcnow()  # Reset the stale timer
 
     session.add(asset)
     session.commit()
-    session.refresh(user)  # Refresh for totals
+    session.refresh(user)
 
-    # Recalculate totals for OOB swap
     total_cost = sum(a.purchase_price for a in user.assets)
     total_value = sum(a.current_market_value for a in user.assets)
     unrealized_gain = total_value - total_cost
 
+    # We need to pass 'now' to the refresh fragment too
     return templates.TemplateResponse("fragments/dashboard_refresh.html", {
         "request": request,
         "user": user,
         "total_cost": total_cost,
         "total_value": total_value,
-        "unrealized_gain": unrealized_gain
+        "unrealized_gain": unrealized_gain,
+        "now": datetime.utcnow()
     })
 
 
@@ -298,7 +400,6 @@ async def delete_asset(
     user = get_current_user(request, session)
     asset = session.get(Asset, asset_id)
 
-    # TYPE FIX: Check user.id
     if not user or not asset or user.id is None or asset.owner_id != user.id:
         return Response(status_code=403)
 
@@ -306,7 +407,6 @@ async def delete_asset(
     session.commit()
     session.refresh(user)
 
-    # Recalculate totals
     total_cost = sum(a.purchase_price for a in user.assets)
     total_value = sum(a.current_market_value for a in user.assets)
     unrealized_gain = total_value - total_cost
@@ -316,10 +416,30 @@ async def delete_asset(
         "user": user,
         "total_cost": total_cost,
         "total_value": total_value,
-        "unrealized_gain": unrealized_gain
+        "unrealized_gain": unrealized_gain,
+        "now": datetime.utcnow()
     })
 
 # --- HTMX Fragments: Category CRUD ---
+
+
+@app.get("/fragments/categories/manage", response_class=HTMLResponse)
+async def get_manage_categories_modal(request: Request, session: Session = Depends(get_session)):
+    user = get_current_user(request, session)
+    if not user:
+        return Response(status_code=401)
+    return templates.TemplateResponse("fragments/manage_categories_modal.html", {
+        "request": request,
+        "categories": user.categories
+    })
+
+
+@app.get("/fragments/categories/new", response_class=HTMLResponse)
+async def get_add_category_form(request: Request, session: Session = Depends(get_session)):
+    user = get_current_user(request, session)
+    if not user:
+        return Response(status_code=401)
+    return templates.TemplateResponse("fragments/add_category_modal.html", {"request": request})
 
 
 @app.post("/fragments/categories", response_class=HTMLResponse)
@@ -329,11 +449,7 @@ async def create_category(
     name: str = Form(...)
 ):
     user = get_current_user(request, session)
-    if not user:
-        return Response(status_code=401)
-
-    # TYPE FIX: Ensure user.id is present
-    if user.id is None:
+    if not user or user.id is None:
         return Response(status_code=500)
 
     new_cat = Category(name=name, owner_id=user.id)
@@ -341,8 +457,56 @@ async def create_category(
     session.commit()
     session.refresh(user)
 
-    # Return updated dropdown options
-    return templates.TemplateResponse("fragments/category_options.html", {
+    # Refresh dashboard so the new category appears in dropdowns
+    total_cost = sum(a.purchase_price for a in user.assets)
+    total_value = sum(a.current_market_value for a in user.assets)
+    unrealized_gain = total_value - total_cost
+
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {
         "request": request,
-        "categories": user.categories
+        "user": user,
+        "total_cost": total_cost,
+        "total_value": total_value,
+        "unrealized_gain": unrealized_gain,
+        "now": datetime.utcnow()
+    })
+
+
+@app.delete("/fragments/categories/{category_id}", response_class=HTMLResponse)
+async def delete_category(
+    category_id: int,
+    request: Request,
+    session: Session = Depends(get_session)
+):
+    user = get_current_user(request, session)
+    if not user or user.id is None:
+        return Response(status_code=403)
+
+    category = session.get(Category, category_id)
+
+    if not category or category.owner_id != user.id:
+        return Response(status_code=403)
+
+    assets_in_cat = session.exec(select(Asset).where(
+        Asset.category_id == category_id)).all()
+    for asset in assets_in_cat:
+        asset.category_id = None
+        session.add(asset)
+
+    session.delete(category)
+
+    session.commit()
+    session.refresh(user)
+
+    total_cost = sum(a.purchase_price for a in user.assets)
+    total_value = sum(a.current_market_value for a in user.assets)
+    unrealized_gain = total_value - total_cost
+
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {
+        "request": request,
+        "user": user,
+        "total_cost": total_cost,
+        "total_value": total_value,
+        "unrealized_gain": unrealized_gain,
+        "now": datetime.utcnow()
     })

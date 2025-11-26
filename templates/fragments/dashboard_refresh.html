@@ -1,78 +1,147 @@
-<!-- This fragment replaces the ENTIRE dashboard content (Totals + Table) -->
-<div id="dashboard-container" class="max-w-4xl mx-auto">
+<div id="dashboard-container" class="max-w-6xl mx-auto">
 
-    <!-- Summary Cards (Updated Totals) -->
+    <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div class="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
-            <h3 class="text-gray-500 text-sm font-uppercase">Total Market Value</h3>
-            <p class="text-2xl font-bold text-gray-800">${{ "%.2f"|format(total_value) }}</p>
+            <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Market Value</h3>
+            <p class="text-2xl font-bold text-gray-800 mt-1">${{ "{:,.2f}".format(total_value) }}</p>
         </div>
         <div class="bg-white p-6 rounded-lg shadow border-l-4 border-gray-500">
-            <h3 class="text-gray-500 text-sm font-uppercase">Total Cost Basis</h3>
-            <p class="text-2xl font-bold text-gray-800">${{ "%.2f"|format(total_cost) }}</p>
+            <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Cost Basis</h3>
+            <p class="text-2xl font-bold text-gray-800 mt-1">${{ "{:,.2f}".format(total_cost) }}</p>
         </div>
         <div
             class="bg-white p-6 rounded-lg shadow border-l-4 {% if unrealized_gain >= 0 %}border-green-500{% else %}border-red-500{% endif %}">
-            <h3 class="text-gray-500 text-sm font-uppercase">Unrealized Gain</h3>
-            <p class="text-2xl font-bold {% if unrealized_gain >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
-                {% if unrealized_gain > 0 %}+{% endif %}${{ "%.2f"|format(unrealized_gain) }}
+            <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Unrealized Gain</h3>
+            <p
+                class="text-2xl font-bold mt-1 {% if unrealized_gain >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if unrealized_gain > 0 %}+{% endif %}${{ "{:,.2f}".format(unrealized_gain) }}
             </p>
         </div>
     </div>
 
     <!-- Actions Bar -->
     <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-semibold text-gray-700">Asset List</h2>
-        <button hx-get="/fragments/assets/new" hx-target="#modal-container"
-            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 shadow">
-            + Add Asset
-        </button>
+        <h2 class="text-xl font-bold text-gray-800">Asset List</h2>
+        <div class="space-x-2">
+            <button hx-get="/fragments/categories/manage" hx-target="#modal-container"
+                class="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 shadow-sm transition">
+                Manage Categories
+            </button>
+            <button hx-get="/fragments/assets/new" hx-target="#modal-container"
+                class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 shadow-sm transition flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add Asset
+            </button>
+        </div>
     </div>
 
     <!-- Asset Table -->
-    <div class="bg-white rounded-lg shadow overflow-hidden">
-        <table class="min-w-full">
-            <thead class="bg-gray-50">
+    <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+        <table class="min-w-full text-sm">
+            <thead class="bg-gray-50 border-b border-gray-200">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category
+                    <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Name</th>
+                    <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Category</th>
+                    <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Last Updated
                     </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current
-                        Value</th>
-                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions
+                    <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Value</th>
+                    <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Unrealized P/L
                     </th>
+                    <th class="px-6 py-3 text-right font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200">
                 {% for asset in user.assets %}
-                <tr id="asset-row-{{ asset.id }}">
-                    <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{{ asset.name }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">
-                        {% if asset.category %}{{ asset.category.name }}{% else %}-{% endif %}
+                {% set gain = asset.current_market_value - asset.purchase_price %}
+                {% set gain_pct = (gain / asset.purchase_price * 100) if asset.purchase_price > 0 else 0 %}
+                {% set days_since = (now - asset.last_updated).days %}
+                {% set is_stale = days_since > 90 %}
+
+                <tr id="asset-row-{{ asset.id }}"
+                    class="hover:bg-gray-50 transition-colors {% if is_stale %}bg-red-50{% endif %}">
+                    <td class="px-6 py-4 font-medium text-gray-900 flex items-center gap-2">
+                        {{ asset.name }}
+                        {% if is_stale %}
+                        <!-- SVG Alert Icon -->
+                        <div class="group relative flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                                class="w-5 h-5 text-red-500 cursor-help">
+                                <path fill-rule="evenodd"
+                                    d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            <!-- Tooltip -->
+                            <span
+                                class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-32 bg-gray-800 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity text-center z-10 pointer-events-none">
+                                Stale Price (>90d)
+                            </span>
+                        </div>
+                        {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">${{ "%.2f"|format(asset.purchase_price) }}
+                    <td class="px-6 py-4 text-gray-500">
+                        {% if asset.category %}
+                        <span
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {{ asset.category.name }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-400">-</span>
+                        {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-900 font-bold">${{
-                        "%.2f"|format(asset.current_market_value) }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td class="px-6 py-4 text-gray-500">
+                        {{ asset.last_updated.strftime('%Y-%m-%d') }}
+                        {% if is_stale %}
+                        <div class="text-xs text-red-600 font-bold mt-1">{{ days_since }} days ago</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-gray-900 font-bold tracking-wide">${{
+                        "{:,.2f}".format(asset.current_market_value) }}</td>
+
+                    <td class="px-6 py-4 font-bold {% if gain >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {% if gain > 0 %}+{% endif %}${{ "{:,.2f}".format(gain) }}
+                        <span class="text-xs font-normal text-gray-500 ml-1">({{ "%.1f"|format(gain_pct) }}%)</span>
+                    </td>
+
+                    <td class="px-6 py-4 text-right font-medium flex justify-end items-center gap-3">
+                        <!-- History Button (SVG) -->
+                        <button hx-get="/fragments/assets/{{ asset.id }}/history" hx-target="#modal-container"
+                            class="text-gray-400 hover:text-blue-600 transition" title="View Audit Log">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </button>
+                        <!-- Edit Button -->
                         <button hx-get="/fragments/assets/{{ asset.id }}/edit" hx-target="#asset-row-{{ asset.id }}"
-                            hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
+                            hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 transition">Edit</button>
+                        <!-- Delete Button -->
                         <button hx-delete="/fragments/assets/{{ asset.id }}" hx-target="#dashboard-container"
                             hx-swap="innerHTML" hx-confirm="Are you sure?"
-                            class="text-red-600 hover:text-red-900">Delete</button>
+                            class="text-red-600 hover:text-red-900 transition">Delete</button>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" class="px-6 py-8 text-center text-gray-500 italic">
-                        No assets found. Start by adding one!
+                    <td colspan="6" class="px-6 py-12 text-center">
+                        <div class="flex flex-col items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-12 h-12 text-gray-300 mb-3">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                            </svg>
+                            <p class="text-gray-500 text-lg">No assets found.</p>
+                            <p class="text-gray-400 text-sm">Start building your portfolio by adding an asset.</p>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    <!-- Modal Container -->
     <div id="modal-container"></div>
 </div>

@@ -1,0 +1,28 @@
+<div id="modal-backdrop"
+    class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+    <div class="relative p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3 text-center">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Add New Category</h3>
+            <div class="mt-2 px-7 py-3">
+                <form hx-post="/fragments/categories" hx-target="#dashboard-container" hx-swap="innerHTML">
+                    <div class="mb-4 text-left">
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="name">Category Name</label>
+                        <input type="text" name="name" placeholder="e.g. Sneakers"
+                            class="px-3 py-2 border rounded w-full focus:outline-none focus:shadow-outline" required>
+                    </div>
+
+                    <div class="flex items-center justify-between space-x-3">
+                        <button type="submit"
+                            class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700 focus:outline-none">
+                            Save
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-backdrop').remove()"
+                            class="px-4 py-2 bg-gray-300 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-400 focus:outline-none">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
