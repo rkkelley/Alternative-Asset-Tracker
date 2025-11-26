@@ -1,4 +1,4 @@
-<div id="dashboard-container" class="max-w-6xl mx-auto">
+<div id="dashboard-container" class="max-w-7xl mx-auto">
 
     <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -46,8 +46,10 @@
                 <tr>
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Name</th>
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-                    <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Last Updated
-                    </th>
+
+                    <!-- NEW: Risk Score Column -->
+                    <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Risk Score</th>
+
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Value</th>
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Unrealized P/L
                     </th>
@@ -58,46 +60,51 @@
                 {% for asset in user.assets %}
                 {% set gain = asset.current_market_value - asset.purchase_price %}
                 {% set gain_pct = (gain / asset.purchase_price * 100) if asset.purchase_price > 0 else 0 %}
+
+                <!-- Risk Logic for row highlighting (Stale Check) -->
                 {% set days_since = (now - asset.last_updated).days %}
                 {% set is_stale = days_since > 90 %}
 
                 <tr id="asset-row-{{ asset.id }}"
                     class="hover:bg-gray-50 transition-colors {% if is_stale %}bg-red-50{% endif %}">
-                    <td class="px-6 py-4 font-medium text-gray-900 flex items-center gap-2">
+                    <td class="px-6 py-4 font-medium text-gray-900">
                         {{ asset.name }}
-                        {% if is_stale %}
-                        <!-- SVG Alert Icon -->
-                        <div class="group relative flex items-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
-                                class="w-5 h-5 text-red-500 cursor-help">
-                                <path fill-rule="evenodd"
-                                    d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z"
-                                    clip-rule="evenodd" />
-                            </svg>
-                            <!-- Tooltip -->
-                            <span
-                                class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-32 bg-gray-800 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity text-center z-10 pointer-events-none">
-                                Stale Price (>90d)
-                            </span>
-                        </div>
-                        {% endif %}
+                        <div class="text-xs text-gray-400 font-normal mt-0.5">Updated: {{
+                            asset.last_updated.strftime('%Y-%m-%d') }}</div>
                     </td>
                     <td class="px-6 py-4 text-gray-500">
                         {% if asset.category %}
                         <span
-                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
                             {{ asset.category.name }}
                         </span>
                         {% else %}
                         <span class="text-gray-400">-</span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 text-gray-500">
-                        {{ asset.last_updated.strftime('%Y-%m-%d') }}
-                        {% if is_stale %}
-                        <div class="text-xs text-red-600 font-bold mt-1">{{ days_since }} days ago</div>
+
+                    <!-- RISK SCORE BADGE (The part you were missing) -->
+                    <td class="px-6 py-4">
+                        {% if asset.risk_data %}
+                        <div class="group relative inline-block">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border cursor-help
+                                {% if asset.risk_data.color == 'green' %} bg-green-100 text-green-800 border-green-200
+                                {% elif asset.risk_data.color == 'yellow' %} bg-yellow-100 text-yellow-800 border-yellow-200
+                                {% else %} bg-red-100 text-red-800 border-red-200 {% endif %}">
+                                {{ asset.risk_data.score }} / 10 ({{ asset.risk_data.label }})
+                            </span>
+                            <!-- Tooltip -->
+                            <div
+                                class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 bg-gray-900 text-white text-xs rounded-md py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none shadow-xl">
+                                <div class="font-bold mb-1 border-b border-gray-700 pb-1">Risk Factors:</div>
+                                {{ asset.risk_data.factors }}
+                            </div>
+                        </div>
+                        {% else %}
+                        <span class="text-gray-400 text-xs">Calc...</span>
                         {% endif %}
                     </td>
+
                     <td class="px-6 py-4 text-gray-900 font-bold tracking-wide">${{
                         "{:,.2f}".format(asset.current_market_value) }}</td>
 
@@ -107,7 +114,6 @@
                     </td>
 
                     <td class="px-6 py-4 text-right font-medium flex justify-end items-center gap-3">
-                        <!-- History Button (SVG) -->
                         <button hx-get="/fragments/assets/{{ asset.id }}/history" hx-target="#modal-container"
                             class="text-gray-400 hover:text-blue-600 transition" title="View Audit Log">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
@@ -116,10 +122,8 @@
                                     d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                         </button>
-                        <!-- Edit Button -->
                         <button hx-get="/fragments/assets/{{ asset.id }}/edit" hx-target="#asset-row-{{ asset.id }}"
                             hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 transition">Edit</button>
-                        <!-- Delete Button -->
                         <button hx-delete="/fragments/assets/{{ asset.id }}" hx-target="#dashboard-container"
                             hx-swap="innerHTML" hx-confirm="Are you sure?"
                             class="text-red-600 hover:text-red-900 transition">Delete</button>
