@@ -22,7 +22,19 @@
 
     <!-- Actions Bar -->
     <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-bold text-gray-800">Asset List</h2>
+        <div class="flex items-center gap-4">
+            <h2 class="text-xl font-bold text-gray-800">Asset List</h2>
+            <!-- View Deleted Button -->
+            <button hx-get="/fragments/audit/deleted" hx-target="#modal-container"
+                class="text-xs font-medium text-gray-400 hover:text-gray-600 flex items-center gap-1 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                </svg>
+                View Archive
+            </button>
+        </div>
         <div class="space-x-2">
             <button hx-get="/fragments/categories/manage" hx-target="#modal-container"
                 class="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 shadow-sm transition">
@@ -46,10 +58,7 @@
                 <tr>
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Name</th>
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-
-                    <!-- NEW: Risk Score Column -->
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Risk Score</th>
-
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Value</th>
                     <th class="px-6 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Unrealized P/L
                     </th>
@@ -57,11 +66,9 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200">
-                {% for asset in user.assets %}
+                {% for asset in assets %}
                 {% set gain = asset.current_market_value - asset.purchase_price %}
                 {% set gain_pct = (gain / asset.purchase_price * 100) if asset.purchase_price > 0 else 0 %}
-
-                <!-- Risk Logic for row highlighting (Stale Check) -->
                 {% set days_since = (now - asset.last_updated).days %}
                 {% set is_stale = days_since > 90 %}
 
@@ -83,7 +90,6 @@
                         {% endif %}
                     </td>
 
-                    <!-- RISK SCORE BADGE (The part you were missing) -->
                     <td class="px-6 py-4">
                         {% if asset.risk_data %}
                         <div class="group relative inline-block">
@@ -124,9 +130,11 @@
                         </button>
                         <button hx-get="/fragments/assets/{{ asset.id }}/edit" hx-target="#asset-row-{{ asset.id }}"
                             hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 transition">Edit</button>
-                        <button hx-delete="/fragments/assets/{{ asset.id }}" hx-target="#dashboard-container"
-                            hx-swap="innerHTML" hx-confirm="Are you sure?"
-                            class="text-red-600 hover:text-red-900 transition">Delete</button>
+                        <!-- Updated Delete Button -->
+                        <button hx-get="/fragments/assets/{{ asset.id }}/delete" hx-target="#asset-row-{{ asset.id }}"
+                            hx-swap="outerHTML" class="text-red-600 hover:text-red-900 transition">
+                            Delete
+                        </button>
                     </td>
                 </tr>
                 {% else %}

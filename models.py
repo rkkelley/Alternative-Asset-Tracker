@@ -15,7 +15,6 @@ class User(SQLModel, table=True):
 class Category(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    # Store the inherent risk of the category here
     base_risk_score: int = Field(default=5)
     owner_id: int = Field(foreign_key="user.id")
 
@@ -24,9 +23,6 @@ class Category(SQLModel, table=True):
 
 
 class ValuationHistory(SQLModel, table=True):
-    """
-    Immutable Audit Trail for Asset Valuations.
-    """
     id: Optional[int] = Field(default=None, primary_key=True)
     asset_id: int = Field(foreign_key="asset.id")
     old_value: float
@@ -38,9 +34,7 @@ class ValuationHistory(SQLModel, table=True):
 
 
 class Asset(SQLModel, table=True):
-    # --- CRITICAL FIX ---
-    # Using the inner Config class avoids Pylance type errors with model_config
-    # while still allowing extra attributes (like risk_data) at runtime.
+    # Allow extra fields like risk_data at runtime
     class Config:
         extra = "allow"
 
@@ -51,6 +45,10 @@ class Asset(SQLModel, table=True):
     purchase_date: date
     current_market_value: float
     last_updated: datetime = Field(default_factory=datetime.utcnow)
+
+    # Soft Delete Field
+    is_active: bool = Field(default=True)
+
     owner_id: int = Field(foreign_key="user.id")
 
     owner: User = Relationship(back_populates="assets")

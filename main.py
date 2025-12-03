@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import Annotated, Any, Dict, Optional
 
-from fastapi import (Depends, FastAPI, Form, HTTPException, Request, Response,
-                     status)
+from fastapi import (Depends, FastAPI, Form, Header, HTTPException, Request,
+                     Response, status)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -106,11 +106,12 @@ def calculate_asset_risk(asset: Asset, total_portfolio_value: float) -> Dict[str
         if return_pct < -0.20:
             vp = 5
 
-    raw_score = (0.30 * acr) + (0.30 * vsr) + (0.25 * cr) + (0.15 * vp)
+    # Adjusted Formula: Heavier weight on Asset Class (0.40) to allow High Risk scores
+    raw_score = (0.40 * acr) + (0.30 * vsr) + (0.20 * cr) + (0.10 * vp)
 
-    if raw_score < 3:
+    if raw_score < 3.5:
         label, color = "Low", "green"
-    elif raw_score < 6:
+    elif raw_score < 6.0:
         label, color = "Med", "yellow"
     else:
         label, color = "High", "red"
@@ -119,7 +120,7 @@ def calculate_asset_risk(asset: Asset, total_portfolio_value: float) -> Dict[str
         "score": round(raw_score, 1),
         "label": label,
         "color": color,
-        "factors": f"Class Risk:{acr} Stale:{vsr} Conc:{cr:.1f}"
+        "factors": f"Class:{acr} Stale:{vsr} Conc:{cr:.1f}"
     }
 
 # --- Routes ---
@@ -168,7 +169,6 @@ async def register(email: str = Form(...), password: str = Form(...), session: S
     session.refresh(new_user)
 
     if new_user.id:
-        # Updated Defaults: Full 1-10 Range
         defaults = {
             "NFTs": 10, "Crypto": 9, "Startups": 8, "Sneakers": 7, "Trading Cards": 6,
             "Art": 5, "Wine": 4, "Watches": 3, "Real Estate": 2, "Cash Equivalents": 1
@@ -237,34 +237,62 @@ async def try_demo(session: Session = Depends(get_session)):
 
     today = datetime.utcnow()
 
-    # 1. The Winner
+    # 1. The Winner (Rolex) - Low Risk
     a1 = Asset(name="Rolex Submariner", category_id=cat_map["Watches"], purchase_price=8500, current_market_value=14500, purchase_date=date(
         2019, 5, 10), last_updated=today, owner_id=demo_user.id)
     session.add(a1)
 
-    # 2. The Loser + History
+    # 2. The Loser (Bored Ape) - High Risk (Crypto + Loss + Stale)
     a2 = Asset(name="Bored Ape NFT #8817", category_id=cat_map["Crypto"], purchase_price=120000, current_market_value=45000, purchase_date=date(
-        2021, 11, 1), last_updated=today - timedelta(days=2), owner_id=demo_user.id)
+        2021, 11, 1), last_updated=today - timedelta(days=45), owner_id=demo_user.id)
     session.add(a2)
     session.commit()
     session.refresh(a2)
     if a2.id is not None:
         h_crypto = ValuationHistory(asset_id=a2.id, old_value=120000, new_value=45000,
-                                    change_date=today-timedelta(days=2), note="Market Correction")
+                                    change_date=today-timedelta(days=45), note="Market Correction")
         session.add(h_crypto)
 
-    # 3. The Risk Flag
-    stale_date = today - timedelta(days=145)
+    # 3. The Risk Flag (Startup) - High Risk (Stale > 180 days)
+    stale_date = today - timedelta(days=200)
     a3 = Asset(name="Series B Startup Shares", category_id=cat_map["Startups"], purchase_price=50000, current_market_value=50000, purchase_date=date(
         2022, 1, 15), last_updated=stale_date, owner_id=demo_user.id)
     session.add(a3)
 
-    # 4. The Audit Star
+    # 4. The Audit Star (Real Estate) - Low/Med Risk
     a4 = Asset(name="Rental Property Fund", category_id=cat_map["Real Estate"], purchase_price=10000, current_market_value=13500, purchase_date=date(
         2023, 6, 1), last_updated=today, owner_id=demo_user.id)
     session.add(a4)
+
+    # --- ARCHIVED ASSETS (Soft Deleted) ---
+
+    # 5. Archived: Sold Wine
+    a5 = Asset(name="Chateau Margaux 2015", category_id=cat_map["Wine"], purchase_price=500, current_market_value=800, purchase_date=date(
+        2018, 2, 1), last_updated=today-timedelta(days=300), is_active=False, owner_id=demo_user.id)
+    session.add(a5)
     session.commit()
-    session.refresh(a4)
+    session.refresh(a5)
+    if a5.id:
+        session.add(ValuationHistory(asset_id=a5.id, old_value=0, new_value=500,
+                    note="Initial Creation", change_date=today-timedelta(days=800)))
+        session.add(ValuationHistory(asset_id=a5.id, old_value=500, new_value=800,
+                    note="Appraisal Update", change_date=today-timedelta(days=100)))
+        session.add(ValuationHistory(asset_id=a5.id, old_value=800, new_value=800,
+                    note="Asset Archived: Sold at Auction", change_date=today-timedelta(days=10)))
+
+    # 6. Archived: Fake Card
+    a6 = Asset(name="Charizard 1st Edition (Raw)", category_id=cat_map["Trading Cards"], purchase_price=2000, current_market_value=0, purchase_date=date(
+        2023, 1, 1), last_updated=today, is_active=False, owner_id=demo_user.id)
+    session.add(a6)
+    session.commit()
+    session.refresh(a6)
+    if a6.id:
+        session.add(ValuationHistory(asset_id=a6.id, old_value=0, new_value=2000,
+                    note="Initial Creation", change_date=today-timedelta(days=200)))
+        session.add(ValuationHistory(asset_id=a6.id, old_value=2000, new_value=0,
+                    note="Asset Archived: Determined to be Counterfeit", change_date=today))
+
+    # History for Asset 4 (Active)
     if a4.id is not None:
         session.add(ValuationHistory(asset_id=a4.id, old_value=10000, new_value=11000,
                     change_date=today-timedelta(days=180), note="Q2 Valuation Update"))
@@ -272,7 +300,8 @@ async def try_demo(session: Session = Depends(get_session)):
                     change_date=today-timedelta(days=90), note="Q3 Market Adjustment"))
         session.add(ValuationHistory(asset_id=a4.id, old_value=12500,
                     new_value=13500, change_date=today, note="Year-End Audit"))
-        session.commit()
+
+    session.commit()
 
     session_token = create_session_token(demo_user.id)
     response = RedirectResponse(
@@ -290,20 +319,20 @@ async def dashboard(request: Request, session: Session = Depends(get_session)):
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
 
-    total_cost = sum(asset.purchase_price for asset in user.assets)
-    total_value = sum(asset.current_market_value for asset in user.assets)
+    active_assets = [a for a in user.assets if a.is_active]
+
+    total_cost = sum(asset.purchase_price for asset in active_assets)
+    total_value = sum(asset.current_market_value for asset in active_assets)
     unrealized_gain = total_value - total_cost
 
-    # --- FIXED RISK ATTACHMENT ---
-    for asset in user.assets:
-        # Explicitly initialize pydantic_extra if needed
+    for asset in active_assets:
         if asset.__pydantic_extra__ is None:
             asset.__pydantic_extra__ = {}
         asset.__pydantic_extra__[
             "risk_data"] = calculate_asset_risk(asset, total_value)
 
     return templates.TemplateResponse("dashboard.html", {
-        "request": request, "user": user, "total_cost": total_cost,
+        "request": request, "user": user, "assets": active_assets, "total_cost": total_cost,
         "total_value": total_value, "unrealized_gain": unrealized_gain,
         "now": datetime.utcnow()
     })
@@ -318,6 +347,15 @@ async def get_asset_history(asset_id: int, request: Request, session: Session = 
     history = sorted(asset.valuation_history,
                      key=lambda x: x.change_date, reverse=True)
     return templates.TemplateResponse("fragments/asset_history_modal.html", {"request": request, "asset": asset, "history": history})
+
+
+@app.get("/fragments/audit/deleted", response_class=HTMLResponse)
+async def get_deleted_assets_modal(request: Request, session: Session = Depends(get_session)):
+    user = get_current_user(request, session)
+    if not user:
+        return Response(status_code=401)
+    deleted_assets = [a for a in user.assets if not a.is_active]
+    return templates.TemplateResponse("fragments/deleted_assets_modal.html", {"request": request, "deleted_assets": deleted_assets})
 
 
 @app.get("/fragments/assets/new", response_class=HTMLResponse)
@@ -342,20 +380,26 @@ async def create_asset(request: Request, session: Session = Depends(get_session)
     session.add(new_asset)
     session.commit()
     session.refresh(new_asset)
+
+    if new_asset.id:
+        genesis_log = ValuationHistory(asset_id=new_asset.id, old_value=0, new_value=purchase_price,
+                                       note="Initial Asset Creation / Purchase", change_date=datetime.utcnow())
+        session.add(genesis_log)
+        session.commit()
+
     session.refresh(user)
 
-    total_cost = sum(a.purchase_price for a in user.assets)
-    total_value = sum(a.current_market_value for a in user.assets)
+    active_assets = [a for a in user.assets if a.is_active]
+    total_cost = sum(a.purchase_price for a in active_assets)
+    total_value = sum(a.current_market_value for a in active_assets)
     unrealized_gain = total_value - total_cost
-
-    # FIX
-    for asset in user.assets:
+    for asset in active_assets:
         if asset.__pydantic_extra__ is None:
             asset.__pydantic_extra__ = {}
         asset.__pydantic_extra__[
             "risk_data"] = calculate_asset_risk(asset, total_value)
 
-    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "assets": active_assets, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
 
 
 @app.get("/fragments/assets/{asset_id}/edit", response_class=HTMLResponse)
@@ -377,8 +421,10 @@ async def update_asset(asset_id: int, request: Request, session: Session = Depen
         return Response(status_code=500)
 
     if asset.current_market_value != current_market_value:
-        history = ValuationHistory(asset_id=asset.id, old_value=asset.current_market_value, new_value=current_market_value,
-                                   note=audit_note or "Manual Update", change_date=datetime.utcnow())  # type: ignore
+        history = ValuationHistory(
+            asset_id=asset.id, old_value=asset.current_market_value, new_value=current_market_value,
+            note=audit_note or "Manual Update", change_date=datetime.utcnow()
+        )
         session.add(history)
 
     asset.name = name
@@ -389,47 +435,82 @@ async def update_asset(asset_id: int, request: Request, session: Session = Depen
     session.commit()
     session.refresh(user)
 
-    total_cost = sum(a.purchase_price for a in user.assets)
-    total_value = sum(a.current_market_value for a in user.assets)
+    active_assets = [a for a in user.assets if a.is_active]
+    total_cost = sum(a.purchase_price for a in active_assets)
+    total_value = sum(a.current_market_value for a in active_assets)
     unrealized_gain = total_value - total_cost
-
-    # FIX
-    for asset in user.assets:
+    for asset in active_assets:
         if asset.__pydantic_extra__ is None:
             asset.__pydantic_extra__ = {}
         asset.__pydantic_extra__[
             "risk_data"] = calculate_asset_risk(asset, total_value)
 
-    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "assets": active_assets, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
+
+
+@app.get("/fragments/assets/{asset_id}/delete", response_class=HTMLResponse)
+async def get_delete_asset_row(asset_id: int, request: Request, session: Session = Depends(get_session)):
+    user = get_current_user(request, session)
+    asset = session.get(Asset, asset_id)
+    if not user or not asset or user.id is None or asset.owner_id != user.id:
+        return Response(status_code=403)
+    return templates.TemplateResponse("fragments/delete_asset_row.html", {"request": request, "asset": asset})
 
 
 @app.delete("/fragments/assets/{asset_id}", response_class=HTMLResponse)
-async def delete_asset(asset_id: int, request: Request, session: Session = Depends(get_session)):
+async def delete_asset(asset_id: int, request: Request, session: Session = Depends(get_session), deletion_note: Optional[str] = Form(None)):
     user = get_current_user(request, session)
     asset = session.get(Asset, asset_id)
-    if not user or not asset or asset.owner_id != user.id:
+    if not user or not asset or user.id is None or asset.owner_id != user.id:
         return Response(status_code=403)
+    if asset.id is None:
+        return Response(status_code=500)
 
-    history = session.exec(select(ValuationHistory).where(
-        ValuationHistory.asset_id == asset.id)).all()
-    for h in history:
-        session.delete(h)
-    session.delete(asset)
+    asset.is_active = False
+    session.add(asset)
+
+    history = ValuationHistory(
+        asset_id=asset.id, old_value=asset.current_market_value, new_value=asset.current_market_value,
+        note=f"Asset Archived: {deletion_note or 'No reason provided'}", change_date=datetime.utcnow()
+    )
+    session.add(history)
     session.commit()
     session.refresh(user)
 
-    total_cost = sum(a.purchase_price for a in user.assets)
-    total_value = sum(a.current_market_value for a in user.assets)
+    active_assets = [a for a in user.assets if a.is_active]
+    total_cost = sum(a.purchase_price for a in active_assets)
+    total_value = sum(a.current_market_value for a in active_assets)
     unrealized_gain = total_value - total_cost
-
-    # FIX
-    for asset in user.assets:
+    for asset in active_assets:
         if asset.__pydantic_extra__ is None:
             asset.__pydantic_extra__ = {}
         asset.__pydantic_extra__[
             "risk_data"] = calculate_asset_risk(asset, total_value)
 
-    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "assets": active_assets, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
+
+
+@app.post("/fragments/assets/{asset_id}/restore", response_class=HTMLResponse)
+async def restore_asset(asset_id: int, request: Request, session: Session = Depends(get_session)):
+    user = get_current_user(request, session)
+    asset = session.get(Asset, asset_id)
+    if not user or not asset or user.id is None or asset.owner_id != user.id:
+        return Response(status_code=403)
+    if asset.id is None:
+        return Response(status_code=500)
+
+    asset.is_active = True
+    session.add(asset)
+
+    history = ValuationHistory(
+        asset_id=asset.id, old_value=asset.current_market_value, new_value=asset.current_market_value,
+        note="Asset Restored from Archive", change_date=datetime.utcnow()
+    )
+    session.add(history)
+    session.commit()
+
+    deleted_assets = [a for a in user.assets if not a.is_active]
+    return templates.TemplateResponse("fragments/deleted_assets_modal.html", {"request": request, "deleted_assets": deleted_assets})
 
 
 @app.get("/fragments/categories/manage", response_class=HTMLResponse)
@@ -449,34 +530,27 @@ async def get_add_category_form(request: Request, session: Session = Depends(get
 
 
 @app.post("/fragments/categories", response_class=HTMLResponse)
-async def create_category(
-    request: Request,
-    session: Session = Depends(get_session),
-    name: str = Form(...),
-    base_risk_score: int = Form(...)
-):
+async def create_category(request: Request, session: Session = Depends(get_session), name: str = Form(...), base_risk_score: int = Form(...)):
     user = get_current_user(request, session)
     if not user or user.id is None:
         return Response(status_code=500)
-
     new_cat = Category(
         name=name, base_risk_score=base_risk_score, owner_id=user.id)
     session.add(new_cat)
     session.commit()
     session.refresh(user)
 
-    total_cost = sum(a.purchase_price for a in user.assets)
-    total_value = sum(a.current_market_value for a in user.assets)
+    active_assets = [a for a in user.assets if a.is_active]
+    total_cost = sum(a.purchase_price for a in active_assets)
+    total_value = sum(a.current_market_value for a in active_assets)
     unrealized_gain = total_value - total_cost
-
-    # FIX
-    for asset in user.assets:
+    for asset in active_assets:
         if asset.__pydantic_extra__ is None:
             asset.__pydantic_extra__ = {}
         asset.__pydantic_extra__[
             "risk_data"] = calculate_asset_risk(asset, total_value)
 
-    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "assets": active_assets, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
 
 
 @app.delete("/fragments/categories/{category_id}", response_class=HTMLResponse)
@@ -487,7 +561,6 @@ async def delete_category(category_id: int, request: Request, session: Session =
     category = session.get(Category, category_id)
     if not category or category.owner_id != user.id:
         return Response(status_code=403)
-
     assets_in_cat = session.exec(select(Asset).where(
         Asset.category_id == category_id)).all()
     for asset in assets_in_cat:
@@ -497,15 +570,14 @@ async def delete_category(category_id: int, request: Request, session: Session =
     session.commit()
     session.refresh(user)
 
-    total_cost = sum(a.purchase_price for a in user.assets)
-    total_value = sum(a.current_market_value for a in user.assets)
+    active_assets = [a for a in user.assets if a.is_active]
+    total_cost = sum(a.purchase_price for a in active_assets)
+    total_value = sum(a.current_market_value for a in active_assets)
     unrealized_gain = total_value - total_cost
-
-    # FIX
-    for asset in user.assets:
+    for asset in active_assets:
         if asset.__pydantic_extra__ is None:
             asset.__pydantic_extra__ = {}
         asset.__pydantic_extra__[
             "risk_data"] = calculate_asset_risk(asset, total_value)
 
-    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
+    return templates.TemplateResponse("fragments/dashboard_refresh.html", {"request": request, "user": user, "assets": active_assets, "total_cost": total_cost, "total_value": total_value, "unrealized_gain": unrealized_gain, "now": datetime.utcnow()})
