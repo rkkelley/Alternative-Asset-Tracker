@@ -16,6 +16,8 @@ class Category(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     base_risk_score: int = Field(default=5)
+    # NEW: Average days to sell (used for Liquidity Risk Factor)
+    liquidity_days: int = Field(default=30)
     owner_id: int = Field(foreign_key="user.id")
 
     owner: User = Relationship(back_populates="categories")

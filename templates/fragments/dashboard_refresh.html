@@ -1,22 +1,35 @@
 <div id="dashboard-container" class="max-w-7xl mx-auto">
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div class="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
-            <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Market Value</h3>
-            <p class="text-2xl font-bold text-gray-800 mt-1">${{ "{:,.2f}".format(total_value) }}</p>
+    <!-- Top Section: Metrics & Visualization -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+
+        <!-- Left Col: Financial Metrics (Span 2) -->
+        <div class="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500 flex flex-col justify-center">
+                <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Market Value</h3>
+                <p class="text-3xl font-bold text-gray-800 mt-2">${{ "{:,.2f}".format(total_value) }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-gray-500 flex flex-col justify-center">
+                <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Cost Basis</h3>
+                <p class="text-3xl font-bold text-gray-800 mt-2">${{ "{:,.2f}".format(total_cost) }}</p>
+            </div>
+            <div
+                class="bg-white p-6 rounded-lg shadow border-l-4 {% if unrealized_gain >= 0 %}border-green-500{% else %}border-red-500{% endif %} flex flex-col justify-center">
+                <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Unrealized Gain</h3>
+                <p
+                    class="text-3xl font-bold mt-2 {% if unrealized_gain >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                    {% if unrealized_gain > 0 %}+{% endif %}${{ "{:,.2f}".format(unrealized_gain) }}
+                </p>
+            </div>
         </div>
-        <div class="bg-white p-6 rounded-lg shadow border-l-4 border-gray-500">
-            <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Cost Basis</h3>
-            <p class="text-2xl font-bold text-gray-800 mt-1">${{ "{:,.2f}".format(total_cost) }}</p>
-        </div>
-        <div
-            class="bg-white p-6 rounded-lg shadow border-l-4 {% if unrealized_gain >= 0 %}border-green-500{% else %}border-red-500{% endif %}">
-            <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider">Unrealized Gain</h3>
-            <p
-                class="text-2xl font-bold mt-1 {% if unrealized_gain >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
-                {% if unrealized_gain > 0 %}+{% endif %}${{ "{:,.2f}".format(unrealized_gain) }}
-            </p>
+
+        <!-- Right Col: Allocation Chart (Span 1) -->
+        <div class="bg-white p-4 rounded-lg shadow flex flex-col items-center justify-center relative">
+            <h3 class="absolute top-4 left-6 text-gray-500 text-xs font-bold uppercase tracking-wider">Allocation by
+                Category</h3>
+            <div class="h-40 w-full mt-4">
+                <canvas id="allocationChart"></canvas>
+            </div>
         </div>
     </div>
 
@@ -24,7 +37,6 @@
     <div class="flex justify-between items-center mb-4">
         <div class="flex items-center gap-4">
             <h2 class="text-xl font-bold text-gray-800">Asset List</h2>
-            <!-- View Deleted Button -->
             <button hx-get="/fragments/audit/deleted" hx-target="#modal-container"
                 class="text-xs font-medium text-gray-400 hover:text-gray-600 flex items-center gap-1 transition">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
@@ -51,8 +63,10 @@
         </div>
     </div>
 
-    <!-- Asset Table -->
+    <!-- Asset Table (Same as before) -->
     <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+        <!-- ... (Keep your existing table code here) ... -->
+        <!-- I am omitting the table rows for brevity as they haven't changed -->
         <table class="min-w-full text-sm">
             <thead class="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -74,6 +88,7 @@
 
                 <tr id="asset-row-{{ asset.id }}"
                     class="hover:bg-gray-50 transition-colors {% if is_stale %}bg-red-50{% endif %}">
+                    <!-- ... (Keep columns same as before) ... -->
                     <td class="px-6 py-4 font-medium text-gray-900">
                         {{ asset.name }}
                         <div class="text-xs text-gray-400 font-normal mt-0.5">Updated: {{
@@ -99,7 +114,6 @@
                                 {% else %} bg-red-100 text-red-800 border-red-200 {% endif %}">
                                 {{ asset.risk_data.score }} / 10 ({{ asset.risk_data.label }})
                             </span>
-                            <!-- Tooltip -->
                             <div
                                 class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 bg-gray-900 text-white text-xs rounded-md py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none shadow-xl">
                                 <div class="font-bold mb-1 border-b border-gray-700 pb-1">Risk Factors:</div>
@@ -130,7 +144,6 @@
                         </button>
                         <button hx-get="/fragments/assets/{{ asset.id }}/edit" hx-target="#asset-row-{{ asset.id }}"
                             hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 transition">Edit</button>
-                        <!-- Updated Delete Button -->
                         <button hx-get="/fragments/assets/{{ asset.id }}/delete" hx-target="#asset-row-{{ asset.id }}"
                             hx-swap="outerHTML" class="text-red-600 hover:text-red-900 transition">
                             Delete
@@ -156,4 +169,65 @@
         </table>
     </div>
     <div id="modal-container"></div>
+
+    <!-- Chart Script -->
+    <!-- This script re-renders the chart every time HTMX swaps this fragment -->
+    <script>
+        (function () {
+            const ctx = document.getElementById('allocationChart').getContext('2d');
+
+            // Destroy previous chart instance if it exists (to prevent duplication/memory leaks)
+            if (window.myChart) {
+                window.myChart.destroy();
+            }
+
+            // Ensure Chart.js is loaded
+            if (typeof Chart === 'undefined') {
+                console.error("Chart.js not loaded");
+                return;
+            }
+
+            window.myChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: {{ allocation_labels | tojson | safe }},
+        datasets: [{
+            data: {{ allocation_values | tojson | safe }},
+            backgroundColor: [
+            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+            '#6366F1', '#EC4899', '#14B8A6', '#F97316', '#64748B'
+        ],
+            borderWidth: 0
+                    }]
+                },
+        options: {
+            responsive: true,
+                maintainAspectRatio: false,
+                    plugins: {
+                legend: {
+                    position: 'right',
+                        labels: { boxWidth: 12, font: { size: 10 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        // Custom callback to format tooltip with $ and commas
+                        label: function(context) {
+                            let label = context.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed !== null) {
+                                // Format as currency using Intl.NumberFormat
+                                label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
+            cutout: '60%'
+        }
+            });
+        }) ();
+    </script>
 </div>
