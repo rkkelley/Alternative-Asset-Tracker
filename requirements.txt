@@ -4,3 +4,5 @@ sqlmodel
 jinja2
 itsdangerous
 python-multipart
+python-dotenv
+psycopg2-binary

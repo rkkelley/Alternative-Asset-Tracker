@@ -1,4 +1,5 @@
 import json
+import os  # Needed for environment variables
 import random
 import secrets
 from contextlib import asynccontextmanager
@@ -15,13 +16,35 @@ from models import Asset, Category, User, ValuationHistory
 from sqlmodel import Session, SQLModel, create_engine, select
 
 # --- Configuration ---
-sqlite_file_name = "database.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
-connect_args = {"check_same_thread": False}
-engine = create_engine(sqlite_url, connect_args=connect_args)
 
-SECRET_KEY = "REPLACE_THIS_WITH_A_REAL_SECRET_KEY_IN_PROD"
+# 1. Database Setup (Auto-Switching)
+# Render provides the URL in the 'DATABASE_URL' env var.
+database_url = os.environ.get("DATABASE_URL")
+
+if database_url:
+    # Production: Use PostgreSQL
+    # Fix for Render: They use 'postgres://' but SQLAlchemy needs 'postgresql://'
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+    connect_args = {}
+    engine = create_engine(database_url, echo=False)
+else:
+    # Development: Fallback to SQLite
+    sqlite_file_name = "database.db"
+    # Use absolute path for SQLite to avoid issues in some environments
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    database_url = f"sqlite:///{os.path.join(base_dir, sqlite_file_name)}"
+    connect_args = {"check_same_thread": False}
+    engine = create_engine(database_url, connect_args=connect_args)
+
+# 2. Security Setup
+# Try to get from env, otherwise generate a random one (safe for dev/demo)
+# Using the generated key as a default for local development
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY", "a8f5f167f44f4964e6c998dee827110c9c3b226c3c38678b12d8c667191e102e")
 serializer = URLSafeTimedSerializer(SECRET_KEY)
+
 templates = Jinja2Templates(directory="templates")
 
 # --- RISK ENGINE CONFIGURATION ---
