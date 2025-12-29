@@ -4,7 +4,7 @@ import random
 import secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import (Depends, FastAPI, Form, Header, HTTPException, Request,
                      Response, status)
@@ -17,34 +17,30 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 # --- Configuration ---
 
-# 1. Database Setup (Auto-Switching)
-# Render provides the URL in the 'DATABASE_URL' env var.
-database_url = os.environ.get("DATABASE_URL")
+# 1. Database Setup (Vercel/Render Auto-Switching)
+# Vercel's Postgres storage usually provides 'POSTGRES_URL'
+database_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
 
 if database_url:
-    # Production: Use PostgreSQL
-    # Fix for Render: They use 'postgres://' but SQLAlchemy needs 'postgresql://'
+    # Production: Fix for Vercel/Render (SQLAlchemy needs 'postgresql://')
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-    connect_args = {}
     engine = create_engine(database_url, echo=False)
 else:
-    # Development: Fallback to SQLite
-    sqlite_file_name = "database.db"
-    # Use absolute path for SQLite to avoid issues in some environments
+    # Development: Fallback to local SQLite
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    database_url = f"sqlite:///{os.path.join(base_dir, sqlite_file_name)}"
-    connect_args = {"check_same_thread": False}
-    engine = create_engine(database_url, connect_args=connect_args)
+    database_url = f"sqlite:///{os.path.join(base_dir, 'database.db')}"
+    engine = create_engine(database_url, connect_args={
+                           "check_same_thread": False})
 
 # 2. Security Setup
-# Try to get from env, otherwise generate a random one (safe for dev/demo)
-# Using the generated key as a default for local development
 SECRET_KEY = os.environ.get(
     "SECRET_KEY", "a8f5f167f44f4964e6c998dee827110c9c3b226c3c38678b12d8c667191e102e")
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
+# 3. App & Templates
+app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # --- RISK ENGINE CONFIGURATION ---
@@ -689,3 +685,17 @@ async def delete_category(category_id: int, request: Request, session: Session =
         "allocation_values": list(allocation_data.values()),
         "now": datetime.utcnow()
     })
+
+# --- KG7 JSON ENDPOINT ---
+# This satisfies the requirement for an endpoint that returns JSON data
+
+
+@app.get("/api/assets", response_model=List[Asset])
+async def get_assets_json(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user)
+):
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    # FastAPI automatically serializes this list of objects into JSON
+    return [a for a in user.assets if a.is_active]
