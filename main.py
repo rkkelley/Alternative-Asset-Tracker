@@ -1,5 +1,5 @@
 import json
-import os  # Needed for environment variables
+import os
 import random
 import secrets
 from contextlib import asynccontextmanager
@@ -14,8 +14,6 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer
 from models import Asset, Category, User, ValuationHistory
 from sqlmodel import Session, SQLModel, create_engine, select
-
-# --- Configuration ---
 
 # 1. Database Setup (Vercel/Render Auto-Switching)
 # Vercel's Postgres storage usually provides 'POSTGRES_URL'
@@ -36,11 +34,11 @@ else:
 
 # 2. Security Setup
 SECRET_KEY = os.environ.get(
-    "SECRET_KEY", "a8f5f167f44f4964e6c998dee827110c9c3b226c3c38678b12d8c667191e102e")
+    "SECRET_KEY", "dev-key-for-local-use-only")
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
 # 3. App & Templates
-app = FastAPI()
+# app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # --- RISK ENGINE CONFIGURATION ---
