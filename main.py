@@ -683,12 +683,3 @@ async def delete_category(category_id: int, request: Request, session: Session =
         "allocation_values": list(allocation_data.values()),
         "now": datetime.utcnow()
     })
-
-
-@app.get("/api/assets")
-async def get_assets_json(
-    user: Optional[User] = Depends(get_current_user)
-):
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return [a for a in user.assets if a.is_active]
