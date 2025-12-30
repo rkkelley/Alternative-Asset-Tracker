@@ -684,16 +684,11 @@ async def delete_category(category_id: int, request: Request, session: Session =
         "now": datetime.utcnow()
     })
 
-# --- KG7 JSON ENDPOINT ---
-# This satisfies the requirement for an endpoint that returns JSON data
 
-
-@app.get("/api/assets", response_model=List[Asset])
+@app.get("/api/assets")
 async def get_assets_json(
-    session: Session = Depends(get_session),
-    user: User = Depends(get_current_user)
+    user: Optional[User] = Depends(get_current_user)
 ):
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    # FastAPI automatically serializes this list of objects into JSON
     return [a for a in user.assets if a.is_active]
