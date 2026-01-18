@@ -4,9 +4,8 @@
 
 ###  Live Demo
 
-[**Click here to launch Alt-Track**](https://alternative-asset-tracker.onrender.com)
+[**Click here to launch Alt-Track**]((https://alternative-asset-tracker.vercel.app/))
 
-> **Note:** The demo is hosted on a free-tier Render instance. It may take **30-50 seconds to spin up** from sleep mode.
 
 ---
 
