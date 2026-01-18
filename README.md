@@ -4,7 +4,7 @@
 
 ###  Live Demo
 
-[**Click here to launch Alt-Track**]((https://alternative-asset-tracker.vercel.app/))
+[**Click here to launch Alt-Track**][(https://alternative-asset-tracker.vercel.app/)]
 
 
 ---
