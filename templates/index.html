@@ -29,6 +29,7 @@
 
         <!-- Working Demo Button -->
         <form action="/demo" method="POST" class="flex-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit"
                 class="w-full bg-white text-gray-700 border border-gray-200 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-gray-50 hover:border-gray-300 shadow-sm transition duration-300 flex items-center justify-center gap-2 group">
                 <span>Try Interactive Demo</span>
@@ -79,9 +80,9 @@
                         d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                 </svg>
             </div>
-            <h3 class="font-bold text-xl text-gray-900 mb-3">Audit Trail</h3>
-            <p class="text-gray-500 leading-relaxed">Immutable history log of every valuation change ensures full data
-                governance and compliance.</p>
+            <h3 class="font-bold text-xl text-gray-900 mb-3">Valuation History</h3>
+            <p class="text-gray-500 leading-relaxed">Review recorded valuation changes and archive or restore assets
+                while preserving their change history.</p>
         </div>
     </div>
 </div>

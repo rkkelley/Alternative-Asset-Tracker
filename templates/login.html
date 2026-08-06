@@ -20,6 +20,7 @@
         <!-- Login Form -->
         <div id="login-form">
             <form hx-post="/login" hx-target="#auth-message" hx-swap="innerHTML">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="email">Email</label>
                     <input
@@ -45,6 +46,7 @@
         <!-- Register Form (Hidden by default) -->
         <div id="register-form" class="hidden">
             <form hx-post="/register" hx-target="#auth-message" hx-swap="innerHTML">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="reg-email">Email</label>
                     <input

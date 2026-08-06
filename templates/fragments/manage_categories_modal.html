@@ -7,6 +7,7 @@
             <!-- Add New Category Form -->
             <form hx-post="/fragments/categories" hx-target="#dashboard-container" hx-swap="innerHTML"
                 class="mb-4 p-3 bg-gray-50 rounded-md text-left">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="mb-2">
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
                     <input type="text" name="name" placeholder="e.g. Stamps"
@@ -61,6 +62,7 @@
                         </div>
                         <button hx-delete="/fragments/categories/{{ cat.id }}" hx-target="#dashboard-container"
                             hx-swap="innerHTML"
+                            hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
                             hx-confirm="Delete '{{ cat.name }}'? Assets in this category will become uncategorized."
                             class="text-gray-300 hover:text-red-600 transition">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"

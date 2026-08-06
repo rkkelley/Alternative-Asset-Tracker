@@ -84,7 +84,7 @@
                 {% set gain = asset.current_market_value - asset.purchase_price %}
                 {% set gain_pct = (gain / asset.purchase_price * 100) if asset.purchase_price > 0 else 0 %}
                 {% set days_since = (now - asset.last_updated).days %}
-                {% set is_stale = days_since > 90 %}
+                {% set is_stale = days_since >= 90 %}
 
                 <tr id="asset-row-{{ asset.id }}"
                     class="hover:bg-gray-50 transition-colors {% if is_stale %}bg-red-50{% endif %}">
@@ -135,7 +135,7 @@
 
                     <td class="px-6 py-4 text-right font-medium flex justify-end items-center gap-3">
                         <button hx-get="/fragments/assets/{{ asset.id }}/history" hx-target="#modal-container"
-                            class="text-gray-400 hover:text-blue-600 transition" title="View Audit Log">
+                            class="text-gray-400 hover:text-blue-600 transition" title="View Valuation History">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                                 stroke="currentColor" class="w-5 h-5">
                                 <path stroke-linecap="round" stroke-linejoin="round"

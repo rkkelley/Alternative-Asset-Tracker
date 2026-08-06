@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -8,6 +8,7 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)
     hashed_password: str
+    session_version: int = Field(default=0)
     assets: List["Asset"] = Relationship(back_populates="owner")
     categories: List["Category"] = Relationship(back_populates="owner")
 

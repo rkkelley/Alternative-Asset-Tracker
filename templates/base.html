@@ -11,7 +11,8 @@
 
 </head>
 
-<body class="bg-gray-100 min-h-screen flex flex-col">
+<body class="bg-gray-100 min-h-screen flex flex-col"
+    hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
     <nav class="bg-white shadow-md p-4">
         <div class="container mx-auto flex justify-between items-center">
             <a href="/" class="text-xl font-bold text-blue-600">Alt-Track</a>
@@ -19,6 +20,7 @@
                 {% if user %}
                 <span class="mr-4 text-gray-600">{{ user.email }}</span>
                 <button hx-post="/logout" hx-target="body"
+                    hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
                     class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">Logout</button>
                 {% else %}
                 <a href="/login" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Login</a>

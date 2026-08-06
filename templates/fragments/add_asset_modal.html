@@ -6,6 +6,7 @@
             <div class="mt-2 px-1">
                 <form hx-post="/fragments/assets" hx-target="#dashboard-container" hx-swap="innerHTML"
                     class="text-left">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
                     <!-- Name -->
                     <div class="mb-3">

@@ -2,6 +2,7 @@
     <td colspan="6">
         <form hx-delete="/fragments/assets/{{ asset.id }}" hx-target="#dashboard-container" hx-swap="innerHTML"
             class="p-4 flex items-center justify-between gap-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
             <div class="flex items-center gap-3">
                 <div class="p-2 bg-red-100 rounded-full text-red-600">

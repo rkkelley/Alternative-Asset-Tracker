@@ -6,3 +6,4 @@ itsdangerous
 python-multipart
 python-dotenv
 psycopg2-binary
+argon2-cffi>=23.1

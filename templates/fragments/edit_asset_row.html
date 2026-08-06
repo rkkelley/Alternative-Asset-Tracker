@@ -2,6 +2,7 @@
     <td colspan="6">
         <form hx-put="/fragments/assets/{{ asset.id }}" hx-target="#dashboard-container" hx-swap="innerHTML"
             class="p-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="flex items-center justify-between w-full gap-6 mb-4">
                 <!-- Name -->
                 <div class="flex-1">
@@ -50,8 +51,8 @@
             <div class="flex items-end justify-between gap-6 border-t border-blue-100 pt-4">
                 <div class="flex-grow">
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">
-                        Audit Note <span class="font-normal normal-case text-gray-400">(Required for valuation
-                            changes)</span>
+                        Change Note <span class="font-normal normal-case text-gray-400">(Optional; recorded with a
+                            valuation change)</span>
                     </label>
                     <input type="text" name="audit_note" placeholder="e.g. 'Q3 Market Adjustment' or 'Appraisal Update'"
                         class="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">

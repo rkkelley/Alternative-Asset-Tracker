@@ -55,6 +55,7 @@
                                 <!-- Restore Button -->
                                 <button hx-post="/fragments/assets/{{ asset.id }}/restore" hx-target="#modal-backdrop"
                                     hx-swap="outerHTML"
+                                    hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
                                     class="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs font-bold border border-green-200 bg-green-50 px-2 py-1 rounded hover:bg-green-100 transition">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                         stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
