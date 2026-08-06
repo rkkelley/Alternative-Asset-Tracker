@@ -9,6 +9,8 @@ class User(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     hashed_password: str
     session_version: int = Field(default=1)
+    is_demo: bool = Field(default=False, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     assets: List["Asset"] = Relationship(back_populates="owner")
     categories: List["Category"] = Relationship(back_populates="owner")
 

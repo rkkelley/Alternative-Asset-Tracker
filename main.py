@@ -28,7 +28,6 @@ from security import (
     CSRF_COOKIE_NAME,
     generate_csrf_token,
     hash_password,
-    is_password_hash,
     password_needs_rehash,
     require_csrf,
     verify_password,
@@ -58,8 +57,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 MAX_MONEY = 1_000_000_000_000
 MAX_NAME_LENGTH = 120
 MAX_NOTE_LENGTH = 500
-DEMO_EMAIL = "demo@alt-track.com"
-DEMO_PASSWORD = "demo_password_123"
+DEMO_RETENTION = timedelta(hours=24)
 
 
 def create_db_and_tables() -> None:
@@ -368,7 +366,38 @@ async def logout(
     return response
 
 
-# --- Shared demo ---
+# --- Temporary demo accounts ---
+
+
+def cleanup_expired_demo_users(session: Session, now: datetime | None = None) -> int:
+    """Delete expired demo users and their dependent portfolio records."""
+
+    cutoff = (now or datetime.utcnow()) - DEMO_RETENTION
+    expired_users = session.exec(
+        select(User).where(User.is_demo == True, User.created_at < cutoff)
+    ).all()
+
+    for demo_user in expired_users:
+        if demo_user.id is None:
+            continue
+        assets = session.exec(select(Asset).where(Asset.owner_id == demo_user.id)).all()
+        for asset in assets:
+            histories = session.exec(
+                select(ValuationHistory).where(ValuationHistory.asset_id == asset.id)
+            ).all()
+            for history in histories:
+                session.delete(history)
+            session.delete(asset)
+        categories = session.exec(
+            select(Category).where(Category.owner_id == demo_user.id)
+        ).all()
+        for category in categories:
+            session.delete(category)
+        session.delete(demo_user)
+
+    if expired_users:
+        session.commit()
+    return len(expired_users)
 
 
 @app.post("/demo", response_class=HTMLResponse)
@@ -377,32 +406,18 @@ async def try_demo(
     session: Session = Depends(get_session),
     _csrf: Any = Depends(require_csrf),
 ):
-    demo_user = session.exec(select(User).where(User.email == DEMO_EMAIL)).first()
-    if not demo_user:
-        demo_user = User(email=DEMO_EMAIL, hashed_password=hash_password(DEMO_PASSWORD))
-        session.add(demo_user)
-        session.commit()
-        session.refresh(demo_user)
-    elif not is_password_hash(demo_user.hashed_password):
-        # Upgrade the old seeded demo record without accepting plaintext login.
-        demo_user.hashed_password = hash_password(DEMO_PASSWORD)
-        session.add(demo_user)
-        session.commit()
+    cleanup_expired_demo_users(session)
+    demo_user = User(
+        email=f"demo-{secrets.token_hex(16)}@alt-track.local",
+        hashed_password=hash_password(secrets.token_urlsafe(32)),
+        is_demo=True,
+    )
+    session.add(demo_user)
+    session.commit()
+    session.refresh(demo_user)
 
     if demo_user.id is None:
         return error_response("Unable to prepare the demo account.", status_code=500)
-
-    existing_assets = session.exec(select(Asset).where(Asset.owner_id == demo_user.id)).all()
-    for asset in existing_assets:
-        for history in session.exec(
-            select(ValuationHistory).where(ValuationHistory.asset_id == asset.id)
-        ).all():
-            session.delete(history)
-        session.delete(asset)
-
-    for category in session.exec(select(Category).where(Category.owner_id == demo_user.id)).all():
-        session.delete(category)
-    session.commit()
 
     categories: dict[str, int] = {}
     for name, (score, days) in RISK_PROFILE_DEFAULTS.items():

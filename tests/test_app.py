@@ -241,20 +241,87 @@ def test_valuation_history_is_created_only_for_real_changes(client, app):
     assert history_count(asset_id) == 2
 
 
-def test_demo_entry_resets_shared_demo_data(client, app):
-    response = csrf_request(client, "POST", "/demo")
-    assert response.status_code == 200
-    with Session(app_module_engine()) as session:
-        demo = session.exec(select(User).where(User.email == "demo@alt-track.com")).one()
-        assert len(session.exec(select(Asset).where(Asset.owner_id == demo.id)).all()) == 6
+def test_separate_demo_requests_create_isolated_users(client, app):
+    assert csrf_request(client, "POST", "/demo").status_code == 200
+    assert csrf_request(client, "POST", "/demo").status_code == 200
 
-    create_asset(client, name="Temporary Demo Asset")
-    csrf_request(client, "POST", "/demo")
     with Session(app_module_engine()) as session:
-        demo = session.exec(select(User).where(User.email == "demo@alt-track.com")).one()
-        assets = session.exec(select(Asset).where(Asset.owner_id == demo.id)).all()
-        assert len(assets) == 6
-        assert all(asset.name != "Temporary Demo Asset" for asset in assets)
+        demo_users = session.exec(
+            select(User).where(User.is_demo == True).order_by(User.id)
+        ).all()
+        assert len(demo_users) == 2
+        assert demo_users[0].id != demo_users[1].id
+        assert all(user.is_demo for user in demo_users)
+
+        for demo_user in demo_users:
+            assert len(session.exec(select(Category).where(Category.owner_id == demo_user.id)).all()) == 10
+            assert len(session.exec(select(Asset).where(Asset.owner_id == demo_user.id)).all()) == 6
+            assert session.exec(
+                select(ValuationHistory)
+                .join(Asset, ValuationHistory.asset_id == Asset.id)
+                .where(Asset.owner_id == demo_user.id)
+            ).all()
+
+
+def test_demo_portfolio_changes_are_isolated(client, app):
+    assert csrf_request(client, "POST", "/demo").status_code == 200
+    with Session(app_module_engine()) as session:
+        first_demo = session.exec(
+            select(User).where(User.is_demo == True).order_by(User.id)
+        ).one()
+
+    assert create_asset(client, name="Only First Demo Asset").status_code == 200
+    assert csrf_request(client, "POST", "/demo").status_code == 200
+
+    with Session(app_module_engine()) as session:
+        demo_users = session.exec(
+            select(User).where(User.is_demo == True).order_by(User.id)
+        ).all()
+        assert len(demo_users) == 2
+        second_demo = demo_users[1]
+        first_assets = session.exec(select(Asset).where(Asset.owner_id == first_demo.id)).all()
+        second_assets = session.exec(select(Asset).where(Asset.owner_id == second_demo.id)).all()
+        assert len(first_assets) == 7
+        assert len(second_assets) == 6
+        assert any(asset.name == "Only First Demo Asset" for asset in first_assets)
+        assert all(asset.name != "Only First Demo Asset" for asset in second_assets)
+
+
+def test_expired_demo_cleanup_never_deletes_normal_user(client, app):
+    normal_email = register(client)
+    normal_user = user_record(app, normal_email)
+    normal_user_id = normal_user.id
+    assert login(client, normal_email).status_code == 200
+    assert create_asset(client, name="Normal User Asset").status_code == 200
+
+    assert csrf_request(client, "POST", "/demo").status_code == 200
+    assert create_asset(client, name="Expired Demo Only Asset").status_code == 200
+    with Session(app_module_engine()) as session:
+        expired_demo = session.exec(
+            select(User).where(User.is_demo == True).order_by(User.id)
+        ).one()
+        expired_demo_email = expired_demo.email
+        expired_demo.created_at = datetime.utcnow() - timedelta(days=2)
+        normal_user = session.get(User, normal_user_id)
+        normal_user.created_at = datetime.utcnow() - timedelta(days=2)
+        session.add_all([expired_demo, normal_user])
+        session.commit()
+
+    # A new demo request runs cleanup before creating the replacement demo.
+    assert csrf_request(client, "POST", "/demo").status_code == 200
+    with Session(app_module_engine()) as session:
+        assert session.exec(select(User).where(User.email == expired_demo_email)).first() is None
+        preserved_normal = session.get(User, normal_user_id)
+        assert preserved_normal is not None
+        assert preserved_normal.is_demo is False
+        assert session.exec(select(Asset).where(Asset.owner_id == normal_user_id)).all()
+        assert session.exec(select(Category).where(Category.owner_id == normal_user_id)).all()
+        assert session.exec(
+            select(Asset).where(Asset.name == "Expired Demo Only Asset")
+        ).first() is None
+        assert session.exec(
+            select(Asset).where(Asset.name == "Normal User Asset")
+        ).one().owner_id == normal_user_id
 
 
 def test_dashboard_tojson_escapes_script_breakout(client, app):
