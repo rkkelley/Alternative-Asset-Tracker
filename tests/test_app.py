@@ -257,6 +257,41 @@ def test_demo_entry_resets_shared_demo_data(client, app):
         assert all(asset.name != "Temporary Demo Asset" for asset in assets)
 
 
+def test_dashboard_tojson_escapes_script_breakout(client, app):
+    email = register(client)
+    login(client, email)
+    user = user_record(app, email)
+    malicious_name = "</script><script>alert(1)</script>"
+    with Session(app_module_engine()) as session:
+        category = session.exec(select(Category).where(Category.owner_id == user.id)).first()
+        category.name = malicious_name
+        session.add(category)
+        session.commit()
+        category_id = category.id
+
+    response = csrf_request(
+        client,
+        "POST",
+        "/fragments/assets",
+        {
+            "name": "Safe Chart Asset",
+            "purchase_price": "100",
+            "purchase_date": "2024-01-01",
+            "current_market_value": "123",
+            "category_id": str(category_id),
+        },
+    )
+    assert response.status_code == 200
+
+    dashboard = client.get("/dashboard")
+    assert malicious_name not in dashboard.text
+    assert (
+        "\\u003c/script\\u003e\\u003cscript\\u003e"
+        "alert(1)\\u003c/script\\u003e"
+    ) in dashboard.text
+    assert "data: [123.0]" in dashboard.text
+
+
 def test_portfolio_totals_allocation_staleness_and_concentration():
     now = datetime(2026, 1, 1)
     watches = Category(name="Watches", base_risk_score=3, liquidity_days=30, owner_id=1)

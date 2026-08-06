@@ -34,7 +34,7 @@ copy .env.example .env        # Windows
 # cp .env.example .env        # macOS/Linux
 ```
 
-Set a real `SECRET_KEY` in `.env` for a persistent local session key. When `DATABASE_URL` is absent, the app creates/uses `database.db` beside `main.py`. Tables are initialized with SQLModel's `create_all` on application startup; this project does not include a migration framework.
+Set a real `SECRET_KEY` in `.env` for a persistent local session key. When `DATABASE_URL` is absent, the app creates/uses `database.db` beside `main.py`. Application startup creates missing tables and then runs a narrow, idempotent database-aware migration for the security schema change.
 
 Start the app:
 
@@ -79,11 +79,11 @@ Install development dependencies and run:
 pytest -q
 ```
 
-The test suite selects a temporary SQLite database before importing the application, recreates its schema per test, and covers registration/login/logout, hashing, CSRF rejection, ownership enforcement, cross-user category assignment, valuation history, archive/restore idempotency, validation, demo reset behavior, totals, allocation, stale valuation, and concentration calculations.
+The test suite selects a temporary SQLite database before importing the application, recreates its schema per test, and covers registration/login/logout, hashing, CSRF rejection, ownership enforcement, cross-user category assignment, valuation history, archive/restore idempotency, validation, demo reset behavior, totals, allocation, stale valuation, concentration, migration, local fallback initialization, and safe Chart.js JSON rendering.
 
 ## Database reset after the security/schema change
 
-The existing local `database.db` may contain plaintext passwords. Local SQLite startup adds the new `session_version` column when it is missing, but a reset is the cleanest way to remove legacy records. Back it up if needed, then stop the app and recreate it before local use:
+The existing local `database.db` may contain plaintext passwords. Local SQLite startup adds or upgrades the `session_version` column when it is missing or contains legacy zero values, but a reset is the cleanest way to remove legacy records. Back it up if needed, then stop the app and recreate it before local use:
 
 ```powershell
 Copy-Item database.db database.db.backup
@@ -91,7 +91,13 @@ Remove-Item database.db
 uvicorn main:app --reload
 ```
 
-The demo entry point upgrades an old plaintext demo record before reseeding, but ordinary legacy accounts are intentionally not accepted by login. PostgreSQL deployments need an equivalent schema migration or a fresh database because `create_all` does not alter existing tables.
+The demo entry point upgrades an old plaintext demo record before reseeding, but ordinary legacy accounts are intentionally not accepted by login.
+
+## Production schema migration
+
+`database.py` applies the security migration during application initialization. For PostgreSQL it runs an idempotent `ALTER TABLE "user" ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`, normalizes legacy zero/null values to `1`, and enforces the default and non-null constraint. Existing users, assets, categories, and valuation history are retained. SQLite uses its compatible `ALTER TABLE` form and the same value normalization.
+
+This migration is wired into the FastAPI lifespan used by the deployment. A Vercel deployment will apply it when the application startup path runs, but this repository has no access to the production database and therefore does not claim that the live schema has already been updated. After deploying, verify the Vercel logs and `/demo` response. If the platform does not execute the lifespan on the deployment path, perform the equivalent migration once against the existing PostgreSQL database using approved production credentials; do not reset or recreate the database.
 
 ## Known limitations and tradeoffs
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import json
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -16,11 +15,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, BadTimeSignature, URLSafeTimedSerializer
-from sqlalchemy import inspect, text
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, select
 
 from models import Asset, Category, User, ValuationHistory
 from portfolio import RISK_PROFILE_DEFAULTS, build_portfolio_summary
+from database import (
+    create_database_engine,
+    initialize_database,
+    resolve_database_url,
+)
 from security import (
     CSRF_COOKIE_NAME,
     generate_csrf_token,
@@ -47,19 +50,10 @@ SESSION_MAX_AGE = int(os.environ.get("SESSION_MAX_AGE", "3600"))
 COOKIE_SECURE = IS_PRODUCTION or os.environ.get("COOKIE_SECURE", "").lower() == "true"
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
-database_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
-if database_url:
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    engine = create_engine(database_url, echo=False)
-else:
-    engine = create_engine(
-        f"sqlite:///{BASE_DIR / 'database.db'}",
-        connect_args={"check_same_thread": False},
-    )
+database_url = resolve_database_url(BASE_DIR)
+engine = create_database_engine(database_url)
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-templates.env.filters["tojson"] = lambda value: json.dumps(value)
 
 MAX_MONEY = 1_000_000_000_000
 MAX_NAME_LENGTH = 120
@@ -69,17 +63,7 @@ DEMO_PASSWORD = "demo_password_123"
 
 
 def create_db_and_tables() -> None:
-    SQLModel.metadata.create_all(engine)
-    # Keep the local SQLite upgrade small and explicit. Production databases
-    # still need an equivalent migration because create_all does not alter
-    # existing tables.
-    if database_url.startswith("sqlite"):
-        columns = {column["name"] for column in inspect(engine).get_columns("user")}
-        if "session_version" not in columns:
-            with engine.begin() as connection:
-                connection.execute(
-                    text("ALTER TABLE user ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
-                )
+    initialize_database(engine)
 
 
 def get_session():
@@ -100,7 +84,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 # --- Security and response helpers ---
 
 
-def create_session_token(user_id: int, session_version: int = 0) -> str:
+def create_session_token(user_id: int, session_version: int = 1) -> str:
     return serializer.dumps({"user_id": user_id, "version": session_version}, salt="session")
 
 

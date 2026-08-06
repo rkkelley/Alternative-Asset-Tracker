@@ -8,7 +8,7 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)
     hashed_password: str
-    session_version: int = Field(default=0)
+    session_version: int = Field(default=1)
     assets: List["Asset"] = Relationship(back_populates="owner")
     categories: List["Category"] = Relationship(back_populates="owner")
 
